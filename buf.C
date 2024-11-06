@@ -133,10 +133,29 @@ const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 const Status BufMgr::unPinPage(File* file, const int PageNo, 
 			       const bool dirty) 
 {
+    // check if the page is in the buffer pool
+    int frameNo = 0;
+    Status lookup_status = hashTable->lookup(file, PageNo, frameNo);
+    if (lookup_status != OK) {
+        return HASHNOTFOUND;
+    }
 
+    // check if the page is pinned
+    BufDesc* buffDescptr = &bufTable[frameNo];
 
+    int& pinCount = buffDescptr->pinCnt;
 
+    if (pinCount == 0) {
+        return PAGENOTPINNED;
+    }
 
+    --pinCount;
+
+    if (dirty == true) {
+        buffDescptr->dirty = true;
+    }
+
+    return OK;
 
 }
 
