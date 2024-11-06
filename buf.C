@@ -65,12 +65,58 @@ BufMgr::~BufMgr() {
 
 const Status BufMgr::allocBuf(int & frame) 
 {
+    // Find the next available buffer using a clock sweep
+    int numPinned = 0;
+    while (numPinned < numBufs)
+    {
+        advanceClock();
+        
+        BufDesc* buffDescptr = &bufTable[clockHand];
+        Page* pageptr = &bufPool[clockHand];
 
+        // check for valid BuffDesc for frame
+        if (buffDescptr->valid == false) {
+            frame = buffDescptr->frameNo;
+            buffDescptr->Clear();
+            return OK;
+        }
 
+        // check refbit
+        if (buffDescptr->refbit == true) {
+            buffDescptr->refbit = false;
+            continue;
+        }
 
+        // check if page is pinned
+        if (buffDescptr->pinCnt > 0) {
+            numPinned++;
+            continue;
+        }
 
+        // a) if the page is dirty, call file->writePage() to flush the page to  
+        // disk and then set the dirty bit for the page to false
+        if (buffDescptr->dirty == true) {
+            Status write_status = buffDescptr->file->writePage(buffDescptr->pageNo, pageptr);
+            if (write_status != OK) {
+                return UNIXERR;
+            }
+            buffDescptr->dirty = false;
+        }
 
+        // b) remove the page from the hashtable (whether the page is clean or dirty)
+        Status remove_status = hashTable->remove(buffDescptr->file, buffDescptr->pageNo);
+        if(remove_status != OK) {
+            return remove_status;
+        }
 
+        // c) invoke the Clear() method on the page frame.
+        buffDescptr->Clear();
+        frame = buffDescptr->frameNo;
+        return OK;
+    }
+
+    // all pages are pinned
+    return BUFFEREXCEEDED;
 }
 
 	
